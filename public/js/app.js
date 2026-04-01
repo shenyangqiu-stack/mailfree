@@ -451,9 +451,9 @@ function getConfiguredRandomLength(){
 }
 
 function getSelectedDomainText(){
-  if (!domainSelect || !domainSelect.options || !domainSelect.options.length) return 'example.com';
+  if (!domainSelect || !domainSelect.options || !domainSelect.options.length) return '未配置域名';
   const idx = domainSelect.selectedIndex >= 0 ? domainSelect.selectedIndex : 0;
-  return String(domainSelect.options[idx]?.textContent || domainSelect.options[0]?.textContent || 'example.com').trim();
+  return String(domainSelect.options[idx]?.textContent || domainSelect.options[0]?.textContent || '未配置域名').trim();
 }
 
 function updateRulePreview(){
@@ -483,6 +483,10 @@ if (els.toggleCustom){
 if (els.createCustomOverlay){
   els.createCustomOverlay.onclick = async () => {
     try{
+      if (!domainSelect || !domainSelect.options || !domainSelect.options.length) {
+        showToast('暂无可用域名，请联系管理员在后台添加', 'warn');
+        return;
+      }
       const local = (els.customLocalOverlay?.value || '').trim();
       if (!/^[A-Za-z0-9._-]{1,64}$/.test(local)) { showToast('用户名不合法，仅限字母/数字/._-', 'warn'); return; }
       const domainIndex = Number(domainSelect?.value || 0);
@@ -588,7 +592,7 @@ function populateDomains(domains){
   updateRulePreview();
 }
 
-// 拉取域名列表（后端在 server.js 解析自环境变量，前端通过一个轻量接口暴露）
+// 拉取域名列表（后端从数据库读取，前端通过轻量接口获取）
 async function loadDomains(){
   if (window.__GUEST_MODE__) {
     // 不发任何请求，直接使用 example.com 并且清空历史，避免旧域名显示
@@ -623,11 +627,7 @@ async function loadDomains(){
   }catch(_){ }
   if (!domainSet){
     const meta = (document.querySelector('meta[name="mail-domains"]')?.getAttribute('content') || '').split(',').map(s=>s.trim()).filter(Boolean);
-    const fallback = [];
-    if (window.currentMailbox && window.currentMailbox.includes('@')) fallback.push(window.currentMailbox.split('@')[1]);
-    if (!meta.length && location.hostname) fallback.push(location.hostname);
-    const list = [...new Set(meta.length ? meta : fallback)].filter(Boolean);
-    populateDomains(list);
+    populateDomains([...new Set(meta)].filter(Boolean));
   }
 }
 // 延迟到会话判定后再加载域名，避免访客模式提前请求真实接口
@@ -697,6 +697,10 @@ async function loadDomains(){
 els.gen.onclick = async () => {
   try {
     setButtonLoading(els.gen, '正在生成…');
+    if (!domainSelect || !domainSelect.options || !domainSelect.options.length) {
+      showToast('暂无可用域名，请联系管理员在后台添加', 'warn');
+      return;
+    }
     const len = getConfiguredRandomLength();
     const domainIndex = Number(domainSelect?.value || 0);
     const prefix = getConfiguredPrefix();

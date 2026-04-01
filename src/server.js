@@ -1,4 +1,4 @@
-import { initDatabase } from './database.js';
+import { initDatabase, listDomains } from './database.js';
 import { handleApiRequest, handleEmailReceive } from './apiHandlers.js';
 import { extractEmail } from './commonUtils.js';
 import { forwardByLocalPart } from './emailForwarder.js';
@@ -60,12 +60,6 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const DB = env.TEMP_MAIL_DB;
-    // 支持多个域名：使用逗号/空格分隔，创建地址时取第一个为默认显示
-    const MAIL_DOMAINS = (env.MAIL_DOMAIN || 'temp.example.com')
-      .split(/[,\s]+/)
-      .map(d => d.trim())
-      .filter(Boolean);
-    const MAIL_DOMAIN = MAIL_DOMAINS[0] || 'temp.example.com';
     // 兼容多种命名，优先读取 Cloudflare Secrets/Vars
     const ADMIN_PASSWORD = env.ADMIN_PASSWORD || env.ADMIN_PASS || '';
     const ADMIN_NAME = String(env.ADMIN_NAME || 'admin').trim().toLowerCase();
@@ -166,9 +160,9 @@ export default {
       if (!payload) return new Response('Unauthorized', { status: 401 });
       // 访客只允许读取模拟数据
       if ((payload.role || 'admin') === 'guest') {
-        return handleApiRequest(request, DB, MAIL_DOMAINS, { mockOnly: true, resendApiKey: RESEND_API_KEY, adminName: String(env.ADMIN_NAME || 'admin').trim().toLowerCase(), r2: env.MAIL_EML });
+        return handleApiRequest(request, DB, { mockOnly: true, resendApiKey: RESEND_API_KEY, adminName: String(env.ADMIN_NAME || 'admin').trim().toLowerCase(), r2: env.MAIL_EML });
       }
-      return handleApiRequest(request, DB, MAIL_DOMAINS, { mockOnly: false, resendApiKey: RESEND_API_KEY, adminName: String(env.ADMIN_NAME || 'admin').trim().toLowerCase(), r2: env.MAIL_EML });
+      return handleApiRequest(request, DB, { mockOnly: false, resendApiKey: RESEND_API_KEY, adminName: String(env.ADMIN_NAME || 'admin').trim().toLowerCase(), r2: env.MAIL_EML });
     }
 
     if (request.method === 'POST' && url.pathname === '/receive') {
@@ -247,10 +241,15 @@ export default {
         const resp = await env.ASSETS.fetch(request);
         try {
           const text = await resp.text();
+          let domainsForMeta = [];
+          try {
+            const dynamicDomains = await listDomains(DB);
+            if (Array.isArray(dynamicDomains) && dynamicDomains.length) domainsForMeta = dynamicDomains;
+          } catch (_) {}
           const payload = await verifyJwtWithCache(JWT_TOKEN, request.headers.get('Cookie') || '');
           // 若未认证，由前端路由守卫完成跳转，避免登录后因为缓存未热而循环；此处直接返回 index
           if (payload === false) {
-            const injected2 = text.replace('<meta name="mail-domains" content="">', `<meta name="mail-domains" content="${MAIL_DOMAINS.join(',')}">`);
+            const injected2 = text.replace('<meta name="mail-domains" content="">', `<meta name="mail-domains" content="${domainsForMeta.join(',')}">`);
             return new Response(injected2, {
               headers: {
                 'Content-Type': 'text/html; charset=utf-8',
@@ -258,7 +257,7 @@ export default {
               }
             });
           }
-          const injected = text.replace('<meta name="mail-domains" content="">', `<meta name="mail-domains" content="${MAIL_DOMAINS.join(',')}">`);
+          const injected = text.replace('<meta name="mail-domains" content="">', `<meta name="mail-domains" content="${domainsForMeta.join(',')}">`);
           return new Response(injected, { 
             headers: { 
               'Content-Type': 'text/html; charset=utf-8',

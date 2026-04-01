@@ -30,6 +30,11 @@
 ### 🔧 系统接口
 - `GET /api/domains` - 获取可用域名列表
   - 返回: 域名数组
+- `POST /api/domains` - 新增域名（仅严格管理员）
+  - 参数: `{ "domain": "mail.example.com" }`
+  - 返回: `{ "success": true, "domain": "mail.example.com" }`
+- `DELETE /api/domains?domain=mail.example.com` - 删除域名（仅严格管理员，至少保留 1 个）
+  - 返回: `{ "success": true, "domain": "mail.example.com" }`
 
 ### 👤 用户管理（管理后台）
 - `GET /api/users` - 获取用户列表

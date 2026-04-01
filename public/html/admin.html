@@ -56,6 +56,24 @@
           <div class="generate-action"><button id="u-open" class="btn btn-primary">创建用户</button></div>
           <div class="generate-action"><button id="a-open" class="btn btn-primary">分配邮箱</button></div>
         </div>
+
+        <div class="card">
+          <h2><span class="card-icon">🌐</span><span>域名管理</span></h2>
+          <div class="domain-create-row">
+            <input id="d-input" class="input" placeholder="例如：mail.example.com" />
+            <button id="d-add" class="btn btn-primary btn-sm">添加</button>
+          </div>
+          <div class="help-text">新增后会立即用于邮箱生成；删除时系统会保留至少一个域名。</div>
+          <div class="card-header domain-card-header">
+            <h3>可用域名 <span id="d-count" class="badge">0</span></h3>
+            <button id="d-refresh" class="btn btn-ghost btn-sm" title="刷新域名列表">刷新</button>
+          </div>
+          <div id="domains-loading" class="loading-indicator" style="margin: 4px 0 8px 0; display:none">
+            <div class="spinner"></div>
+            <span>加载中…</span>
+          </div>
+          <div id="domains-list" class="domain-list"></div>
+        </div>
    
         <div class="card">
           <h2><span class="card-icon">📦</span><span>用户的邮箱列表</span></h2>

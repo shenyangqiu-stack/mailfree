@@ -38,7 +38,7 @@
 
 ## 3. 在 Cloudflare Workers 配置变量
 
-本项目运行在 Cloudflare Workers，需把密钥配置为 Secret，域名配置为普通变量。
+本项目运行在 Cloudflare Workers，需把密钥配置为 Secret；域名列表通过管理页动态维护。
 
 方式一：命令行（Wrangler）
 
@@ -47,15 +47,13 @@
 wrangler secret put RESEND_API_KEY
 # 或者使用下面同义变量（不推荐）：RESEND_TOKEN / RESEND
 
-# 设置普通变量（可写入 wrangler.toml 的 [vars]）
-# 多域名用逗号/空格分隔
-# 例：MAIL_DOMAIN="iding.asia, example.com"
+# 域名列表请在管理页「域名管理」中动态维护
 ```
 
 方式二：Dashboard（Git 集成部署常用）
 - 进入 Cloudflare Dashboard → Workers → 选中你的 Worker → Settings → Variables。
 - 在 Secrets 添加 `RESEND_API_KEY`。
-- 在 Variables 添加 `MAIL_DOMAIN`，值为你用于收取/发件的域名列表（需与 Resend 已验证域名一致）。
+- 域名请在管理页「域名管理」中添加/删除（建议保持与 Resend 已验证域名一致）。
 
 ## 4. 关联项目并部署
 

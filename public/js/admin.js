@@ -24,6 +24,13 @@ const els = {
   aName: document.getElementById('a-name'),
   aMail: document.getElementById('a-mail'),
 
+  dInput: document.getElementById('d-input'),
+  dAdd: document.getElementById('d-add'),
+  dRefresh: document.getElementById('d-refresh'),
+  dCount: document.getElementById('d-count'),
+  domainsList: document.getElementById('domains-list'),
+  domainsLoading: document.getElementById('domains-loading'),
+
   userMailboxes: document.getElementById('user-mailboxes'),
   userMailboxesLoading: document.getElementById('user-mailboxes-loading'),
   // edit modal
@@ -123,6 +130,115 @@ async function api(path, options){
 
 function openModal(m){ m?.classList?.add('show'); }
 function closeModal(m){ m?.classList?.remove('show'); }
+
+let __domainsCache = [];
+let __canManageDomains = false;
+
+function normalizeDomainInput(input){
+  return String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z]+:\/\//, '')
+    .replace(/^@+/, '')
+    .replace(/\/+.*$/, '')
+    .replace(/\.+$/, '');
+}
+
+function renderDomains(domains){
+  const list = Array.isArray(domains) ? domains : [];
+  __domainsCache = list;
+  if (els.dCount) els.dCount.textContent = String(list.length);
+  if (!els.domainsList) return;
+  if (!list.length){
+    els.domainsList.innerHTML = '<div class="domain-empty">暂无可用域名</div>';
+    return;
+  }
+  els.domainsList.innerHTML = '';
+  list.forEach((domain) => {
+    const row = document.createElement('div');
+    row.className = 'domain-item';
+
+    const text = document.createElement('span');
+    text.className = 'domain-text';
+    text.textContent = domain;
+
+    const actions = document.createElement('div');
+    actions.className = 'domain-actions';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn btn-ghost btn-sm';
+    copyBtn.type = 'button';
+    copyBtn.textContent = '复制';
+    copyBtn.onclick = () => copyText(domain);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-danger btn-sm';
+    delBtn.type = 'button';
+    delBtn.textContent = '删除';
+    delBtn.disabled = !__canManageDomains || list.length <= 1;
+    delBtn.title = !__canManageDomains
+      ? '仅严格管理员可删除域名'
+      : (list.length <= 1 ? '至少保留一个域名' : '删除该域名');
+    delBtn.onclick = () => {
+      openAdminConfirm(`确认删除域名 ${domain} 吗？`, async () => {
+        try{
+          const r = await api(`/api/domains?domain=${encodeURIComponent(domain)}`, { method:'DELETE' });
+          if (!r.ok){ const t = await r.text(); throw new Error(t || '删除失败'); }
+          showToast('域名已删除', 'success');
+          await loadDomains();
+        }catch(e){
+          showToast('删除失败：' + (e?.message || e), 'warn');
+        }
+      });
+    };
+
+    actions.appendChild(copyBtn);
+    actions.appendChild(delBtn);
+    row.appendChild(text);
+    row.appendChild(actions);
+    els.domainsList.appendChild(row);
+  });
+}
+
+async function loadDomains(){
+  try{
+    if (els.domainsLoading) els.domainsLoading.style.display = 'inline-flex';
+    const r = await api('/api/domains');
+    const list = await r.json();
+    renderDomains(Array.isArray(list) ? list : []);
+  }catch(e){
+    if (els.domainsList) els.domainsList.innerHTML = '<div class="domain-empty" style="color:#dc2626">加载域名失败</div>';
+  }finally{
+    if (els.domainsLoading) els.domainsLoading.style.display = 'none';
+  }
+}
+
+async function createDomain(){
+  if (!__canManageDomains){ showToast('仅严格管理员可管理域名', 'warn'); return; }
+  const raw = els.dInput?.value || '';
+  const domain = normalizeDomainInput(raw);
+  if (!domain){ showToast('请输入域名', 'warn'); return; }
+  const validDomain = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$/.test(domain);
+  if (!validDomain){ showToast('域名格式不正确', 'warn'); return; }
+  if (__domainsCache.includes(domain)){ showToast('域名已存在', 'warn'); return; }
+  try{
+    if (els.dInput) els.dInput.value = domain;
+    setButtonLoading(els.dAdd, '添加中…');
+    const r = await api('/api/domains', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain })
+    });
+    if (!r.ok){ const t = await r.text(); throw new Error(t || '添加失败'); }
+    showToast('域名已添加', 'success');
+    if (els.dInput) els.dInput.value = '';
+    await loadDomains();
+  }catch(e){
+    showToast('添加失败：' + (e?.message || e), 'warn');
+  }finally{
+    restoreButton(els.dAdd);
+  }
+}
 
 async function loadUsers(){
   try{
@@ -319,6 +435,22 @@ els.logout.onclick = async () => {
 // 加载
 els.usersRefresh.onclick = async () => { if (els.usersLoading){ els.usersLoading.style.display = 'inline-flex'; } await loadUsers(); };
 loadUsers();
+if (els.dInput) els.dInput.disabled = true;
+if (els.dAdd) {
+  els.dAdd.disabled = true;
+  els.dAdd.title = '正在校验域名管理权限';
+}
+if (els.dRefresh) els.dRefresh.onclick = () => loadDomains();
+if (els.dAdd) els.dAdd.onclick = () => createDomain();
+if (els.dInput) {
+  els.dInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter'){
+      e.preventDefault();
+      createDomain();
+    }
+  });
+}
+loadDomains();
 
 // ===== 二级页面：编辑用户 =====
 window.openEdit = (id, name, role, limit, canSend) => {
@@ -368,7 +500,14 @@ document.addEventListener('mousedown', (e) => {
     const r = await fetch('/api/session');
     if (!r.ok) return;
     const s = await r.json();
+    __canManageDomains = !!(s?.strictAdmin || s?.role === 'guest');
+    if (els.dInput) els.dInput.disabled = !__canManageDomains;
+    if (els.dAdd) {
+      els.dAdd.disabled = !__canManageDomains;
+      els.dAdd.title = __canManageDomains ? '' : '仅严格管理员可添加域名';
+    }
     if (s && s.role === 'guest' && els.demoBanner){ els.demoBanner.style.display = 'block'; }
+    renderDomains(__domainsCache);
   }catch(_){ }
 })();
 

@@ -1,16 +1,32 @@
 import { extractEmail, generateRandomId } from './commonUtils.js';
 import { buildMockEmails, buildMockMailboxes, buildMockEmailDetail } from './mockData.js';
 import { getOrCreateMailboxId, getMailboxIdByAddress, recordSentEmail, updateSentEmail, ensureSentEmailsTable, toggleMailboxPin, 
-  listUsersWithCounts, createUser, updateUser, deleteUser, assignMailboxToUser, getUserMailboxes } from './database.js';
+  listUsersWithCounts, createUser, updateUser, deleteUser, assignMailboxToUser, getUserMailboxes,
+  listDomains, addDomain, removeDomain } from './database.js';
 import { parseEmailBody, extractVerificationCode } from './emailParser.js';
 import { sendEmailWithResend, sendBatchWithResend, getEmailFromResend, updateEmailInResend, cancelEmailInResend } from './emailSender.js';
 
-export async function handleApiRequest(request, db, mailDomains, options = { mockOnly: false, resendApiKey: '', adminName: '', r2: null }) {
+export async function handleApiRequest(request, db, options = { mockOnly: false, resendApiKey: '', adminName: '', r2: null }) {
   const url = new URL(request.url);
   const path = url.pathname;
   const isMock = !!options.mockOnly;
   const MOCK_DOMAINS = ['exa.cc', 'exr.yp', 'duio.ty'];
   const RESEND_API_KEY = options.resendApiKey || '';
+  function getMockDomains(){
+    if (!Array.isArray(globalThis.__MOCK_DOMAINS__) || !globalThis.__MOCK_DOMAINS__.length) {
+      globalThis.__MOCK_DOMAINS__ = [...MOCK_DOMAINS];
+    }
+    return globalThis.__MOCK_DOMAINS__;
+  }
+
+  async function getRuntimeDomains(){
+    if (isMock) return getMockDomains();
+    try{
+      const domains = await listDomains(db);
+      if (Array.isArray(domains)) return domains;
+    }catch(_){ }
+    return [];
+  }
 
   function getJwtPayload(){
     try{
@@ -54,7 +70,7 @@ export async function handleApiRequest(request, db, mailDomains, options = { moc
     globalThis.__MOCK_USER_MAILBOXES__ = new Map(); // userId -> [{ address, created_at, is_pinned }]
     // 为每个演示用户预生成若干邮箱，便于列表展示
     try {
-      const domains = MOCK_DOMAINS;
+      const domains = getMockDomains();
       for (const u of globalThis.__MOCK_USERS__) {
         const maxCount = Math.min(u.mailbox_limit || 10, 8);
         const minCount = Math.min(3, maxCount);
@@ -139,9 +155,63 @@ export async function handleApiRequest(request, db, mailDomains, options = { moc
 
   // 返回域名列表给前端
   if (path === '/api/domains' && request.method === 'GET') {
-    if (isMock) return Response.json(MOCK_DOMAINS);
-    const domains = Array.isArray(mailDomains) ? mailDomains : [(mailDomains || 'temp.example.com')];
+    const domains = await getRuntimeDomains();
     return Response.json(domains);
+  }
+
+  if (path === '/api/domains' && request.method === 'POST') {
+    if (!isMock && !isStrictAdmin()) return new Response('Forbidden', { status: 403 });
+    try{
+      const body = await request.json();
+      const domain = String(body?.domain || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^[a-z]+:\/\//, '')
+        .replace(/^@+/, '')
+        .replace(/\/+.*$/, '')
+        .replace(/\.+$/, '');
+      if (!domain) return new Response('缺少 domain 参数', { status: 400 });
+      const validDomain = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$/.test(domain);
+      if (!validDomain) return new Response('域名格式不正确', { status: 400 });
+      if (isMock){
+        const domains = getMockDomains();
+        if (domains.includes(domain)) return new Response('域名已存在', { status: 400 });
+        domains.push(domain);
+        return Response.json({ success: true, domain });
+      }
+      const result = await addDomain(db, domain);
+      return Response.json(result);
+    }catch(e){
+      return new Response(String(e?.message || '添加域名失败'), { status: 400 });
+    }
+  }
+
+  if (path === '/api/domains' && request.method === 'DELETE') {
+    if (!isMock && !isStrictAdmin()) return new Response('Forbidden', { status: 403 });
+    const domain = String(url.searchParams.get('domain') || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^[a-z]+:\/\//, '')
+      .replace(/^@+/, '')
+      .replace(/\/+.*$/, '')
+      .replace(/\.+$/, '');
+    if (!domain) return new Response('缺少 domain 参数', { status: 400 });
+    try{
+      if (isMock){
+        const domains = getMockDomains();
+        const idx = domains.indexOf(domain);
+        if (idx < 0) return new Response('域名不存在', { status: 404 });
+        if (domains.length <= 1) return new Response('至少保留一个域名', { status: 400 });
+        domains.splice(idx, 1);
+        return Response.json({ success: true, domain });
+      }
+      const result = await removeDomain(db, domain);
+      return Response.json(result);
+    }catch(e){
+      const msg = String(e?.message || '删除域名失败');
+      const status = msg.includes('不存在') ? 404 : 400;
+      return new Response(msg, { status });
+    }
   }
 
   if (path === '/api/generate') {
@@ -152,7 +222,8 @@ export async function handleApiRequest(request, db, mailDomains, options = { moc
     const randomLength = Math.max(1, Math.min(30, Number.isFinite(randomLengthRaw) ? Math.floor(randomLengthRaw) : 8));
     const randomPart = generateRandomId(Math.max(8, randomLength)).slice(0, randomLength);
     const randomId = `${prefixRaw}${randomPart}`;
-    const domains = isMock ? MOCK_DOMAINS : (Array.isArray(mailDomains) ? mailDomains : [(mailDomains || 'temp.example.com')]);
+    const domains = await getRuntimeDomains();
+    if (!domains.length) return new Response('暂无可用域名，请先在管理页配置域名', { status: 400 });
     const domainIdx = Math.max(0, Math.min(domains.length - 1, Number(url.searchParams.get('domainIndex') || 0)));
     const chosenDomain = domains[domainIdx] || domains[0];
     const email = `${randomId}@${chosenDomain}`;
@@ -251,7 +322,8 @@ export async function handleApiRequest(request, db, mailDomains, options = { moc
         const local = String(body.local || '').trim().toLowerCase();
         const valid = /^[a-z0-9._-]{1,64}$/i.test(local);
         if (!valid) return new Response('非法用户名', { status: 400 });
-        const domains = MOCK_DOMAINS;
+        const domains = await getRuntimeDomains();
+        if (!domains.length) return new Response('暂无可用域名，请先在管理页配置域名', { status: 400 });
         const domainIdx = Math.max(0, Math.min(domains.length - 1, Number(body.domainIndex || 0)));
         const chosenDomain = domains[domainIdx] || domains[0];
         const email = `${local}@${chosenDomain}`;
@@ -263,7 +335,8 @@ export async function handleApiRequest(request, db, mailDomains, options = { moc
       const local = String(body.local || '').trim().toLowerCase();
       const valid = /^[a-z0-9._-]{1,64}$/i.test(local);
       if (!valid) return new Response('非法用户名', { status: 400 });
-      const domains = Array.isArray(mailDomains) ? mailDomains : [(mailDomains || 'temp.example.com')];
+      const domains = await getRuntimeDomains();
+      if (!domains.length) return new Response('暂无可用域名，请先在管理页配置域名', { status: 400 });
       const domainIdx = Math.max(0, Math.min(domains.length - 1, Number(body.domainIndex || 0)));
       const chosenDomain = domains[domainIdx] || domains[0];
       const email = `${local}@${chosenDomain}`;
@@ -576,7 +649,8 @@ export async function handleApiRequest(request, db, mailDomains, options = { moc
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '10', 10), 100);
     const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10), 0);
     if (isMock) {
-      return Response.json(buildMockMailboxes(limit, offset, mailDomains));
+      const domains = await getRuntimeDomains();
+      return Response.json(buildMockMailboxes(limit, offset, domains));
     }
     // 超级管理员（严格管理员）可查看全部；其他仅查看自身绑定
     try{

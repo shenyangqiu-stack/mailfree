@@ -46,6 +46,7 @@
 - **创建用户**: 通过用户名/密码/角色创建新用户
 - **编辑用户**: 支持改名、重置密码、角色切换、发件权限开关、调整邮箱上限
 - **分配邮箱**: 批量为用户分配邮箱地址（支持多行粘贴，自动格式校验）
+- **域名管理**: 在管理页动态添加/删除可用域名（至少保留 1 个），无需再改环境变量
 - **删除用户**: 解除用户与邮箱的绑定关系（不会删除邮箱实体与邮件数据）
 - **前端权限防护**: 管理页进入前进行快速鉴权，未授权自动跳转，避免内容闪现
 - **操作确认与反馈**: 关键操作提供二次确认弹窗与统一 Toast 提示，操作状态与结果清晰可见
@@ -169,7 +170,6 @@ bucket_name = "你的R2存储桶名称"
 
 # 环境变量
 [vars]
-MAIL_DOMAIN = "你的域名.com，域名2.cn" #可以多个 以英文逗号分隔
 ADMIN_NAME = "admin_name" # 超级管理员用户名 （不配名称 默认为admin）
 ADMIN_PASSWORD = "password" # 超级管理员密码
 JWT_TOKEN = "token" # 随便一串字符串
@@ -210,6 +210,12 @@ wrangler deploy
 wrangler d1 execute TEMP_MAIL_DB --file=./d1-init-basic.sql
 ```
 
+### 4.6 首次添加域名（必须）
+
+- 现在域名完全走动态配置，不再依赖 `MAIL_DOMAIN`。
+- 首次部署后，请先使用严格管理员账号进入管理页，在「域名管理」中添加至少 1 个域名。
+- 未添加域名前，前台不会生成邮箱。
+
 ### 5. 配置邮件路由（必需用于收取真实邮件）
 
 如果需要接收真实邮件，需要在 Cloudflare 控制台配置邮件路由：
@@ -228,7 +234,6 @@ wrangler d1 execute TEMP_MAIL_DB --file=./d1-init-basic.sql
 |--------|------|------|
 | TEMP_MAIL_DB | D1 数据库绑定 | 是 |
 | MAIL_EML | R2 存储桶绑定，用于保存完整的邮件 EML 文件 | 是 |
-| MAIL_DOMAIN | 用于生成临时邮箱的域名，支持多个，使用逗号或空格分隔（如 `iding.asia, example.com`） | 是 |
 | ADMIN_PASSWORD | 后台访问密码（严格管理员登录） | 是 |
 | ADMIN_NAME | 严格管理员用户名（默认 `admin`） | 否 |
 | JWT_TOKEN / JWT_SECRET | JWT 签名密钥（二选一，推荐 `JWT_TOKEN`） | 是 |
@@ -293,7 +298,7 @@ wrangler d1 execute TEMP_MAIL_DB --file=./d1-init-basic.sql
 1. **邮件接收不到**
    - 检查 Cloudflare 邮件路由配置是否正确
    - 确认域名的 MX 记录设置
-   - 验证 MAIL_DOMAIN 环境变量配置
+   - 验证可用域名列表配置（管理页“域名管理”）
 
 2. **数据库连接错误**
    - 确认 D1 数据库绑定名称为 TEMP_MAIL_DB

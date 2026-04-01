@@ -166,6 +166,74 @@
 /* 左侧“创建用户 / 分配邮箱”按钮的上下间距 */
 .generate-action + .generate-action{ margin-top:12px; }
 
+.domain-create-row{
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+
+.domain-create-row .btn{
+	height: 44px;
+	min-width: 76px;
+}
+
+.domain-card-header{
+	margin: 12px 0 10px 0;
+}
+
+.domain-card-header h3{
+	margin: 0;
+	font-size: 14px;
+	font-weight: 700;
+	color: var(--text);
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.domain-list{
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-height: 220px;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+.domain-item{
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 8px 10px;
+	border: 1px solid var(--border-light);
+	border-radius: 8px;
+	background: rgba(255,255,255,0.7);
+}
+
+.domain-text{
+	font-weight: 600;
+	font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+	word-break: break-all;
+	flex: 1;
+}
+
+.domain-actions{
+	display: inline-flex;
+	gap: 6px;
+	flex-shrink: 0;
+}
+
+.domain-empty{
+	padding: 12px;
+	border: 1px dashed var(--border-light);
+	border-radius: 8px;
+	color: var(--muted2);
+	font-size: 13px;
+	text-align: center;
+}
+
 /* 用户列表列宽优化 */
 .col-id{ width:56px; }
 .col-username{ width:18%; }
@@ -174,4 +242,23 @@
 .col-can{ width:12%; }
 .col-created{ width:24%; }
 .col-actions{ width:20%; }
+
+@media (max-width: 768px){
+	.domain-create-row{
+		grid-template-columns: 1fr;
+	}
+
+	.domain-create-row .btn{
+		width: 100%;
+	}
+
+	.domain-item{
+		flex-direction: column;
+		align-items: stretch;
+	}
+
+	.domain-actions{
+		justify-content: flex-end;
+	}
+}
 

@@ -8,6 +8,10 @@ export async function initDatabase(db) {
     // 复合索引：按地址 + 创建时间，优化历史邮箱倒序
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_mailboxes_address_created ON mailboxes(address, created_at DESC);`);
 
+    // 可管理域名表：支持运行时动态添加/删除域名
+    await db.exec("CREATE TABLE IF NOT EXISTS domains (id INTEGER PRIMARY KEY AUTOINCREMENT, domain TEXT NOT NULL UNIQUE, created_at TEXT DEFAULT CURRENT_TIMESTAMP);");
+    await db.exec('CREATE INDEX IF NOT EXISTS idx_domains_domain ON domains(domain)');
+
     await db.exec("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, mailbox_id INTEGER NOT NULL, sender TEXT NOT NULL, to_addrs TEXT NOT NULL, subject TEXT NOT NULL, verification_code TEXT, preview TEXT, r2_bucket TEXT NOT NULL DEFAULT 'mail-eml', r2_object_key TEXT NOT NULL, received_at TEXT DEFAULT CURRENT_TIMESTAMP, is_read INTEGER DEFAULT 0, FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id));");
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_mailbox_id ON messages(mailbox_id);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_received_at ON messages(received_at DESC);`);
@@ -67,6 +71,52 @@ export async function initDatabase(db) {
   } catch (error) {
     console.error('数据库初始化失败:', error);
   }
+}
+
+function normalizeDomainValue(input){
+  return String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z]+:\/\//, '')
+    .replace(/^@+/, '')
+    .replace(/\/+.*$/, '')
+    .replace(/\.+$/, '');
+}
+
+function isValidDomainValue(domain){
+  const d = String(domain || '').trim().toLowerCase();
+  if (!d) return false;
+  if (d.length > 253) return false;
+  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$/.test(d);
+}
+
+export async function listDomains(db){
+  const { results } = await db.prepare('SELECT domain FROM domains ORDER BY datetime(created_at) ASC, id ASC').all();
+  return (results || []).map(r => String(r.domain || '').trim().toLowerCase()).filter(Boolean);
+}
+
+export async function addDomain(db, rawDomain){
+  const domain = normalizeDomainValue(rawDomain);
+  if (!isValidDomainValue(domain)) throw new Error('域名格式不正确');
+  const exists = await db.prepare('SELECT id FROM domains WHERE domain = ?').bind(domain).all();
+  if (exists?.results?.length) throw new Error('域名已存在');
+  await db.prepare('INSERT INTO domains (domain) VALUES (?)').bind(domain).run();
+  return { success: true, domain };
+}
+
+export async function removeDomain(db, rawDomain){
+  const domain = normalizeDomainValue(rawDomain);
+  if (!isValidDomainValue(domain)) throw new Error('域名格式不正确');
+
+  const exists = await db.prepare('SELECT id FROM domains WHERE domain = ?').bind(domain).all();
+  if (!exists?.results?.length) throw new Error('域名不存在');
+
+  const countRes = await db.prepare('SELECT COUNT(1) AS c FROM domains').all();
+  const count = Number(countRes?.results?.[0]?.c || 0);
+  if (count <= 1) throw new Error('至少保留一个域名');
+
+  await db.prepare('DELETE FROM domains WHERE domain = ?').bind(domain).run();
+  return { success: true, domain };
 }
 
 export async function getOrCreateMailboxId(db, address) {
